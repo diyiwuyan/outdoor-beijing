@@ -280,10 +280,10 @@
   <!-- 快捷时间 -->
   <div class="filter-group">
     <div class="quick-btns">
-      <button class="quick-btn" onclick="setQuickDate('today')">今天</button>
-      <button class="quick-btn active" onclick="setQuickDate('week')">本周末</button>
-      <button class="quick-btn" onclick="setQuickDate('next')">下周</button>
-      <button class="quick-btn" onclick="setQuickDate('month')">本月</button>
+      <button class="quick-btn" onclick="setQuickDate('today',this)">今天</button>
+      <button class="quick-btn active" onclick="setQuickDate('week',this)">本周末</button>
+      <button class="quick-btn" onclick="setQuickDate('next',this)">下周</button>
+      <button class="quick-btn" onclick="setQuickDate('month',this)">本月</button>
     </div>
   </div>
 
@@ -377,9 +377,17 @@ function getPlatformLabel(platform) {
 }
 
 // ===== 快捷日期 =====
-function setQuickDate(range) {
+function setQuickDate(range, triggerEl) {
   document.querySelectorAll('.quick-btn').forEach(b => b.classList.remove('active'));
-  event.target.classList.add('active');
+  // triggerEl 由按钮 onclick 传入；程序调用时可能为空
+  if (triggerEl) triggerEl.classList.add('active');
+  else {
+    // 根据 range 找到对应按钮激活
+    const rangeMap = {today:0, week:1, next:2, month:3};
+    const idx = rangeMap[range];
+    const btns = document.querySelectorAll('.quick-btn');
+    if (idx !== undefined && btns[idx]) btns[idx].classList.add('active');
+  }
 
   const today = new Date();
   today.setHours(0,0,0,0);
@@ -442,8 +450,7 @@ function resetFilters() {
   document.getElementById('filter-diff').value = '';
   document.getElementById('filter-platform').value = '';
   document.querySelectorAll('.quick-btn').forEach(b => b.classList.remove('active'));
-  document.querySelectorAll('.quick-btn')[1].classList.add('active'); // 默认本周末
-  setQuickDate('week');
+  setQuickDate('month');
 }
 
 // ===== 渲染卡片 =====
@@ -539,7 +546,9 @@ function goPage(p) {
 async function loadActivities() {
   try {
     // 只加载已审核的活动，按日期排序
-    const url = `${SUPABASE_URL}/rest/v1/activities?status=eq.approved&order=activity_date.asc&select=*`;
+    // status=pending 是爬虫默认写入值；approved 是人工审核后的值
+    // 两种都展示，让用户能看到数据
+    const url = `${SUPABASE_URL}/rest/v1/activities?status=in.(pending,approved)&order=activity_date.asc&select=*&limit=200`;
     const res = await fetch(url, {
       headers: {
         'apikey': SUPABASE_ANON,
@@ -550,8 +559,8 @@ async function loadActivities() {
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     allActivities = await res.json();
 
-    // 默认显示本周末
-    setQuickDate('week');
+    // 默认显示本月（范围更大，更容易看到数据）
+    setQuickDate('month');
 
   } catch (err) {
     console.error('加载失败:', err);
