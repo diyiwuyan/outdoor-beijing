@@ -1,4 +1,4 @@
-requests==2.31.0
-beautifulsoup4==4.12.3
-supabase==2.4.0
-lxml==5.1.0
+requests>=2.31.0
+beautifulsoup4>=4.12.0
+supabase>=2.10.0
+# lxml 可选，用于更快的 HTML 解析；不可用时 bs4 自动回退到 html.parser

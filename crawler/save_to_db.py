@@ -72,9 +72,10 @@ def save_activities(activities: list[dict]) -> dict:
             stats["skipped_invalid"] += 1
             continue
 
-        # 日期校验（过滤无效日期或过期活动）
-        if not is_valid_date(item.get("activity_date")):
-            logger.info(f"  跳过（日期无效或已过期）: {item.get('activity_name', '')[:30]}")
+        # 日期校验：有日期时过滤过期活动；无日期（如"电询"）允许入库
+        activity_date = item.get("activity_date")
+        if activity_date and not is_valid_date(activity_date):
+            logger.info(f"  跳过（日期已过期）: {item.get('activity_name', '')[:30]} | {activity_date}")
             stats["skipped_invalid"] += 1
             continue
 
