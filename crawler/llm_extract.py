@@ -27,7 +27,7 @@ EXTRACT_PROMPT = """你是一个户外活动信息提取助手。请从以下文
 1. 若某字段在文章中未提及，填 null
 2. activity_type 只能是以下之一：徒步、骑行、露营、攀岩、滑雪、皮划艇、其他
 3. difficulty 只能是以下之一：入门、进阶、挑战、null
-4. activity_date 格式为 YYYY-MM-DD，若只有月日则补充当前年份（{current_year}年）
+4. activity_date 格式为 YYYY-MM-DD，若只有月日则补充当前年份（{current_year}年）；若有多个团期，取最近的未来日期（今天是{today}）
 5. price_min 提取费用中的最低数字（整数），免费填0，无法判断填null
 6. is_outdoor_activity：判断这篇文章是否确实是在招募/宣传一个具体的户外活动（true/false）
 7. destination 填目的地或路线名称，如"香山"、"怀柔水长城"
@@ -64,10 +64,13 @@ def call_llm(text: str, retries: int = 2) -> Optional[dict]:
         logger.warning("文章内容过短，跳过LLM提取")
         return None
 
-    current_year = datetime.now().year
+    now = datetime.now()
+    current_year = now.year
+    today = now.strftime("%Y-%m-%d")
     prompt = EXTRACT_PROMPT.format(
         text=text[:3000],  # 限制输入长度，控制token消耗
         current_year=current_year,
+        today=today,
     )
 
     payload = {
@@ -118,7 +121,17 @@ def extract_activities(raw_items: list[dict]) -> list[dict]:
         logger.info(f"LLM提取 [{i+1}/{total}]: {item.get('activity_name', '')[:30]}...")
 
         raw_text = item.get("raw_text", "") or item.get("summary", "")
-        if not raw_text:
+        # 把爆虫已知字段拼到文本开头，让 LLM 更容易提取
+        prefix_lines = []
+        if item.get("activity_name"):
+            prefix_lines.append(f"活动名称：{item['activity_name']}")
+        if item.get("date_text"):
+            prefix_lines.append(f"团期：{item['date_text']}")
+        if item.get("price"):
+            prefix_lines.append(f"价格：{item['price']}")
+        if prefix_lines:
+            raw_text = "\n".join(prefix_lines) + "\n" + raw_text
+        if not raw_text.strip():
             logger.info("  无正文内容，跳过")
             continue
 

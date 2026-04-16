@@ -1,6 +1,6 @@
 """
 绿野网 (lvye.cn) 活动爬虫
-抓取北京地区近期户外活动列表及详情页
+抓取精选活动列表（/lines/all）及详情页
 """
 
 import requests
@@ -9,7 +9,6 @@ import json
 import time
 import random
 import logging
-from datetime import datetime, timedelta
 from typing import Optional
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
@@ -26,15 +25,19 @@ HEADERS = {
 }
 
 BASE_URL = "https://www.lvye.cn"
-# 绿野活动列表页，按北京筛选，按时间排序
-LIST_URL = "https://www.lvye.cn/activities/?city=1&sort=time&page={page}"
+# 绿野精选活动列表，按北京/京郊筛选
+# 参数说明：all-{目的地}-{类型}-{天数}-{价格}-{排序}-{页码}
+# 直接用 /lines/all 获取全部，再用 /lines/all?city=1 筛选北京
+LIST_URLS = [
+    "https://www.lvye.cn/lines/all",           # 全部精选
+]
 
 
 def fetch_page(url: str, retries: int = 3) -> Optional[BeautifulSoup]:
     """请求页面，失败自动重试"""
     for attempt in range(retries):
         try:
-            time.sleep(random.uniform(1.5, 3.0))  # 随机延迟，避免被封
+            time.sleep(random.uniform(1.5, 3.0))
             resp = requests.get(url, headers=HEADERS, timeout=15)
             resp.raise_for_status()
             resp.encoding = "utf-8"
@@ -47,53 +50,59 @@ def fetch_page(url: str, retries: int = 3) -> Optional[BeautifulSoup]:
     return None
 
 
-def parse_activity_list(soup: BeautifulSoup) -> list[dict]:
+def parse_list_page(soup: BeautifulSoup) -> list[dict]:
     """解析活动列表页，返回活动摘要列表"""
     activities = []
-    # 绿野活动卡片选择器（根据实际页面结构调整）
-    cards = soup.select(".activity-item, .act-item, .list-item")
-    if not cards:
-        # 备用：尝试更宽泛的选择器
-        cards = soup.select("li[class*='activity'], div[class*='activity-card']")
 
-    for card in cards:
+    # 找所有 /lines/show_ 链接的父 li
+    show_links = soup.select("a[href*='/lines/show_']")
+    seen_urls = set()
+
+    for link in show_links:
         try:
-            # 标题和链接
-            title_el = card.select_one("a[href*='/activities/']")
-            if not title_el:
-                continue
-            title = title_el.get_text(strip=True)
-            href = title_el.get("href", "")
+            href = link.get("href", "")
             url = href if href.startswith("http") else BASE_URL + href
+            if url in seen_urls:
+                continue
+            seen_urls.add(url)
 
-            # 日期
-            date_el = card.select_one(".date, .time, [class*='date']")
-            date_text = date_el.get_text(strip=True) if date_el else ""
+            li = link.find_parent("li") or link.parent
 
-            # 费用
-            price_el = card.select_one(".price, .fee, [class*='price']")
-            price_text = price_el.get_text(strip=True) if price_el else ""
+            # 标题：.bt 或 img alt
+            title_el = li.select_one(".bt") if li else None
+            if title_el:
+                title = title_el.get_text(strip=True)
+            else:
+                img = link.select_one("img")
+                title = img.get("alt", "").strip() if img else link.get_text(strip=True)
 
-            # 难度
-            diff_el = card.select_one(".difficulty, .level, [class*='diff']")
-            diff_text = diff_el.get_text(strip=True) if diff_el else ""
-
-            # 组织方
-            org_el = card.select_one(".organizer, .author, .user, [class*='org']")
-            org_text = org_el.get_text(strip=True) if org_el else ""
+            if not title:
+                continue
 
             # 封面图
-            img_el = card.select_one("img")
-            img_url = img_el.get("src", "") or img_el.get("data-src", "") if img_el else ""
+            img_el = link.select_one("img")
+            cover = ""
+            if img_el:
+                cover = img_el.get("src") or img_el.get("data-src") or ""
+
+            # 日期（.dates span）
+            date_el = li.select_one(".dates") if li else None
+            date_text = date_el.get_text(strip=True).replace("团期：", "") if date_el else ""
+
+            # 价格：列表页通常没有价格，留空，详情页再补
+            price_text = ""
+
+            # 简介（.ts）
+            desc_el = li.select_one(".ts") if li else None
+            desc_text = desc_el.get_text(strip=True) if desc_el else ""
 
             activities.append({
                 "activity_name": title,
                 "source_url": url,
                 "date_text": date_text,
                 "price": price_text,
-                "difficulty": diff_text,
-                "organizer_name": org_text,
-                "cover_image": img_url,
+                "description": desc_text,
+                "cover_image": cover,
                 "source_platform": "lvye",
             })
         except Exception as e:
@@ -113,48 +122,55 @@ def parse_activity_detail(url: str) -> dict:
 
     try:
         # 标题
-        title_el = soup.select_one("h1, .activity-title, [class*='title']")
-        if title_el:
-            detail["activity_name"] = title_el.get_text(strip=True)
+        h1 = soup.select_one("h1")
+        if h1:
+            detail["activity_name"] = h1.get_text(strip=True)
 
-        # 正文（用于LLM提取）
-        content_el = soup.select_one(
-            ".activity-content, .content, .detail-content, article, [class*='content']"
-        )
-        if content_el:
-            detail["raw_text"] = content_el.get_text(separator="\n", strip=True)[:3000]
+        # 价格：优先取 .new-price（含完整文字如 ￥3888.00起）
+        price_el = soup.select_one(".new-price")
+        if price_el:
+            detail["price"] = price_el.get_text(strip=True)
 
         # 封面图
         og_img = soup.select_one('meta[property="og:image"]')
         if og_img:
             detail["cover_image"] = og_img.get("content", "")
+        else:
+            first_img = soup.select_one(".dmp-banner img, .detail-main-pic img")
+            if first_img:
+                detail["cover_image"] = first_img.get("src", "")
 
-        # 尝试直接从页面提取结构化字段（绿野部分活动有固定格式）
-        info_items = soup.select(".info-item, .detail-item, [class*='info-row']")
-        for item in info_items:
-            label_el = item.select_one(".label, .key, dt")
-            value_el = item.select_one(".value, .val, dd")
-            if not label_el or not value_el:
-                continue
-            label = label_el.get_text(strip=True)
-            value = value_el.get_text(strip=True)
+        # 从页面正文提取 raw_text 供 LLM 解析
+        # 优先取详情内容区，包含日期/集合地点等关键信息
+        content_el = soup.select_one(".dmp-des, .detail-main, .product-content, .line-content, .line-show-main")
+        if content_el:
+            raw = content_el.get_text(separator="\n", strip=True)
+        else:
+            # 兜底：取 body 全文（去掉导航/脚本）
+            for tag in soup(["script", "style", "nav", "footer", "header"]):
+                tag.decompose()
+            raw = soup.get_text(separator="\n", strip=True)
+        # 把标题和日期拼到 raw_text 开头，确保 LLM 能提取
+        prefix_parts = []
+        h1 = soup.select_one("h1")
+        if h1:
+            prefix_parts.append("活动名称：" + h1.get_text(strip=True))
+        # 价格也放进去
+        if price_el:
+            prefix_parts.append("价格：" + price_el.get_text(strip=True))
+        detail["raw_text"] = "\n".join(prefix_parts) + "\n" + raw[:2500]
 
-            if "时间" in label or "日期" in label:
-                detail["date_text"] = value
-            elif "集合" in label and "时间" in label:
-                detail["meeting_time"] = value
-            elif "集合" in label and ("地" in label or "点" in label):
-                detail["meeting_place"] = value
-            elif "时长" in label or "行程" in label:
-                detail["duration"] = value
-            elif "费用" in label or "收费" in label or "价格" in label:
-                detail["price"] = value
-            elif "难度" in label:
-                detail["difficulty"] = value
-            elif "名额" in label or "人数" in label:
-                detail["quota"] = value
-            elif "目的地" in label or "路线" in label:
-                detail["destination"] = value
+        # 尝试提取团期/集合地点等结构化字段
+        # 绿野详情页通常在 .cp-show-msg 或 table 里
+        info_rows = soup.select(".info-row, .detail-info tr, .cp-show-msg p")
+        for row in info_rows:
+            text = row.get_text(strip=True)
+            if "团期" in text or "出发" in text:
+                detail["date_text"] = text.replace("团期：", "").replace("出发日期：", "").strip()
+            elif "集合" in text and ("地" in text or "点" in text):
+                detail["meeting_place"] = text
+            elif "费用" in text or "价格" in text:
+                detail["price"] = text
 
     except Exception as e:
         logger.warning(f"解析详情页失败 {url}: {e}")
@@ -162,46 +178,55 @@ def parse_activity_detail(url: str) -> dict:
     return detail
 
 
-def crawl_lvye(max_pages: int = 5, days_ahead: int = 30) -> list[dict]:
+def crawl_lvye(max_pages: int = 3) -> list[dict]:
     """
-    主入口：爬取绿野近期北京活动
-    max_pages: 最多爬取列表页数
-    days_ahead: 只保留未来N天内的活动
+    主入口：爬取绿野精选活动
+    max_pages: 每个列表 URL 最多爬取的页数
     """
     all_activities = []
-    cutoff_date = datetime.now() + timedelta(days=days_ahead)
+    seen_urls = set()
 
-    for page in range(1, max_pages + 1):
-        logger.info(f"正在爬取绿野列表第 {page} 页...")
-        url = LIST_URL.format(page=page)
-        soup = fetch_page(url)
-        if not soup:
-            break
+    for list_url in LIST_URLS:
+        for page in range(1, max_pages + 1):
+            # 绿野翻页：/lines/all?page=2 或 /lines/all-...-{page}
+            if page == 1:
+                url = list_url
+            else:
+                url = list_url + f"?page={page}"
 
-        items = parse_activity_list(soup)
-        if not items:
-            logger.info(f"第 {page} 页无活动，停止翻页")
-            break
+            logger.info(f"正在爬取绿野列表: {url}")
+            soup = fetch_page(url)
+            if not soup:
+                break
 
-        logger.info(f"第 {page} 页找到 {len(items)} 条活动")
+            items = parse_list_page(soup)
+            if not items:
+                logger.info(f"第 {page} 页无活动，停止翻页")
+                break
 
-        for item in items:
-            # 抓取详情页
-            logger.info(f"  抓取详情: {item['activity_name'][:30]}...")
-            detail = parse_activity_detail(item["source_url"])
-            merged = {**item, **detail}
-            all_activities.append(merged)
+            logger.info(f"第 {page} 页找到 {len(items)} 条活动")
 
-        # 翻页间隔
-        time.sleep(random.uniform(2, 4))
+            new_items = [i for i in items if i["source_url"] not in seen_urls]
+            if not new_items:
+                logger.info("无新活动，停止翻页")
+                break
+
+            for item in new_items:
+                seen_urls.add(item["source_url"])
+                logger.info(f"  抓取详情: {item['activity_name'][:30]}...")
+                detail = parse_activity_detail(item["source_url"])
+                merged = {**item, **detail}
+                all_activities.append(merged)
+                time.sleep(random.uniform(1, 2))
+
+            time.sleep(random.uniform(2, 4))
 
     logger.info(f"绿野爬取完成，共 {len(all_activities)} 条活动")
     return all_activities
 
 
 if __name__ == "__main__":
-    results = crawl_lvye(max_pages=3)
-    # 本地调试：输出到文件
+    results = crawl_lvye(max_pages=2)
     with open("lvye_raw.json", "w", encoding="utf-8") as f:
         json.dump(results, f, ensure_ascii=False, indent=2)
     print(f"已保存 {len(results)} 条到 lvye_raw.json")
