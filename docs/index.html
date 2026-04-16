@@ -1,0 +1,571 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>北京户外活动聚合</title>
+  <style>
+    /* ===== 基础重置 ===== */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Helvetica Neue", sans-serif;
+      background: #f5f5f0;
+      color: #1a1a1a;
+      min-height: 100vh;
+    }
+
+    /* ===== 顶部导航 ===== */
+    header {
+      background: #2d5a27;
+      color: white;
+      padding: 16px 24px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+    }
+    header h1 { font-size: 20px; font-weight: 700; letter-spacing: 1px; }
+    header h1 span { font-size: 13px; font-weight: 400; opacity: 0.8; margin-left: 8px; }
+    .header-right { font-size: 13px; opacity: 0.7; }
+
+    /* ===== 筛选栏 ===== */
+    .filter-bar {
+      background: white;
+      padding: 16px 24px;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      align-items: center;
+      border-bottom: 1px solid #e8e8e8;
+      position: sticky;
+      top: 57px;
+      z-index: 99;
+    }
+    .filter-group { display: flex; align-items: center; gap: 6px; }
+    .filter-group label { font-size: 13px; color: #666; white-space: nowrap; }
+    select, input[type="date"] {
+      border: 1px solid #ddd;
+      border-radius: 6px;
+      padding: 6px 10px;
+      font-size: 13px;
+      color: #333;
+      background: white;
+      cursor: pointer;
+      outline: none;
+      transition: border-color 0.2s;
+    }
+    select:focus, input[type="date"]:focus { border-color: #2d5a27; }
+    .btn-reset {
+      background: none;
+      border: 1px solid #ccc;
+      border-radius: 6px;
+      padding: 6px 14px;
+      font-size: 13px;
+      color: #666;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    .btn-reset:hover { border-color: #2d5a27; color: #2d5a27; }
+
+    /* 快捷时间按钮 */
+    .quick-btns { display: flex; gap: 6px; }
+    .quick-btn {
+      background: #f0f0f0;
+      border: none;
+      border-radius: 16px;
+      padding: 5px 12px;
+      font-size: 12px;
+      color: #555;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    .quick-btn:hover, .quick-btn.active {
+      background: #2d5a27;
+      color: white;
+    }
+
+    /* ===== 主内容区 ===== */
+    main { max-width: 1200px; margin: 0 auto; padding: 24px 16px; }
+
+    /* 统计栏 */
+    .stats-bar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 16px;
+    }
+    .stats-bar .count { font-size: 14px; color: #666; }
+    .stats-bar .count strong { color: #2d5a27; font-size: 18px; }
+
+    /* ===== 活动卡片网格 ===== */
+    .activity-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+      gap: 16px;
+    }
+
+    .activity-card {
+      background: white;
+      border-radius: 12px;
+      overflow: hidden;
+      box-shadow: 0 1px 4px rgba(0,0,0,0.08);
+      transition: transform 0.2s, box-shadow 0.2s;
+      cursor: pointer;
+      text-decoration: none;
+      color: inherit;
+      display: flex;
+      flex-direction: column;
+    }
+    .activity-card:hover {
+      transform: translateY(-3px);
+      box-shadow: 0 6px 20px rgba(0,0,0,0.12);
+    }
+
+    /* 封面图 */
+    .card-cover {
+      width: 100%;
+      height: 160px;
+      object-fit: cover;
+      background: #e8f0e6;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 40px;
+      flex-shrink: 0;
+    }
+    .card-cover img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+    }
+
+    /* 卡片内容 */
+    .card-body { padding: 14px 16px; flex: 1; display: flex; flex-direction: column; gap: 8px; }
+
+    .card-tags { display: flex; gap: 6px; flex-wrap: wrap; }
+    .tag {
+      font-size: 11px;
+      padding: 2px 8px;
+      border-radius: 10px;
+      font-weight: 500;
+    }
+    .tag-type  { background: #e8f5e9; color: #2d5a27; }
+    .tag-diff  { background: #fff3e0; color: #e65100; }
+    .tag-platform { background: #f3e5f5; color: #6a1b9a; }
+
+    .card-title {
+      font-size: 15px;
+      font-weight: 600;
+      line-height: 1.4;
+      color: #1a1a1a;
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+    }
+
+    .card-desc {
+      font-size: 13px;
+      color: #666;
+      line-height: 1.5;
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+    }
+
+    .card-meta {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      margin-top: auto;
+      padding-top: 8px;
+      border-top: 1px solid #f0f0f0;
+    }
+    .meta-row {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 12px;
+      color: #555;
+    }
+    .meta-icon { font-size: 13px; flex-shrink: 0; }
+    .meta-price { color: #e65100; font-weight: 600; font-size: 13px; }
+
+    .card-footer {
+      padding: 10px 16px;
+      background: #fafafa;
+      border-top: 1px solid #f0f0f0;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .organizer { font-size: 12px; color: #888; }
+    .source-link {
+      font-size: 12px;
+      color: #2d5a27;
+      text-decoration: none;
+      font-weight: 500;
+      padding: 4px 10px;
+      border: 1px solid #2d5a27;
+      border-radius: 12px;
+      transition: all 0.2s;
+    }
+    .source-link:hover { background: #2d5a27; color: white; }
+
+    /* ===== 空状态 ===== */
+    .empty-state {
+      text-align: center;
+      padding: 80px 20px;
+      color: #999;
+    }
+    .empty-state .emoji { font-size: 48px; margin-bottom: 16px; }
+    .empty-state p { font-size: 15px; }
+
+    /* ===== 加载状态 ===== */
+    .loading {
+      text-align: center;
+      padding: 60px;
+      color: #999;
+      font-size: 15px;
+    }
+    .spinner {
+      width: 32px; height: 32px;
+      border: 3px solid #e0e0e0;
+      border-top-color: #2d5a27;
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+      margin: 0 auto 16px;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ===== 分页 ===== */
+    .pagination {
+      display: flex;
+      justify-content: center;
+      gap: 8px;
+      margin-top: 32px;
+    }
+    .page-btn {
+      padding: 8px 16px;
+      border: 1px solid #ddd;
+      border-radius: 6px;
+      background: white;
+      font-size: 14px;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    .page-btn:hover, .page-btn.active { background: #2d5a27; color: white; border-color: #2d5a27; }
+    .page-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+    /* ===== 响应式 ===== */
+    @media (max-width: 600px) {
+      .filter-bar { padding: 12px 16px; }
+      .activity-grid { grid-template-columns: 1fr; }
+      header h1 span { display: none; }
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <h1>🏔 北京户外活动 <span>聚合平台</span></h1>
+  <div class="header-right">数据每日自动更新</div>
+</header>
+
+<div class="filter-bar">
+  <!-- 快捷时间 -->
+  <div class="filter-group">
+    <div class="quick-btns">
+      <button class="quick-btn" onclick="setQuickDate('today')">今天</button>
+      <button class="quick-btn active" onclick="setQuickDate('week')">本周末</button>
+      <button class="quick-btn" onclick="setQuickDate('next')">下周</button>
+      <button class="quick-btn" onclick="setQuickDate('month')">本月</button>
+    </div>
+  </div>
+
+  <!-- 活动类型 -->
+  <div class="filter-group">
+    <label>类型</label>
+    <select id="filter-type" onchange="applyFilters()">
+      <option value="">全部</option>
+      <option value="徒步">🥾 徒步</option>
+      <option value="骑行">🚴 骑行</option>
+      <option value="露营">⛺ 露营</option>
+      <option value="攀岩">🧗 攀岩</option>
+      <option value="滑雪">⛷ 滑雪</option>
+      <option value="皮划艇">🛶 皮划艇</option>
+      <option value="其他">🌿 其他</option>
+    </select>
+  </div>
+
+  <!-- 难度 -->
+  <div class="filter-group">
+    <label>难度</label>
+    <select id="filter-diff" onchange="applyFilters()">
+      <option value="">全部</option>
+      <option value="入门">入门</option>
+      <option value="进阶">进阶</option>
+      <option value="挑战">挑战</option>
+    </select>
+  </div>
+
+  <!-- 来源 -->
+  <div class="filter-group">
+    <label>来源</label>
+    <select id="filter-platform" onchange="applyFilters()">
+      <option value="">全部</option>
+      <option value="lvye">绿野</option>
+      <option value="weixin">公众号</option>
+    </select>
+  </div>
+
+  <button class="btn-reset" onclick="resetFilters()">重置</button>
+</div>
+
+<main>
+  <div class="stats-bar">
+    <div class="count">共找到 <strong id="result-count">-</strong> 个活动</div>
+  </div>
+
+  <div id="activity-container">
+    <div class="loading">
+      <div class="spinner"></div>
+      <p>正在加载活动数据...</p>
+    </div>
+  </div>
+
+  <div class="pagination" id="pagination"></div>
+</main>
+
+<script>
+// ===== 配置 =====
+// 替换为你的 Supabase 项目信息
+const SUPABASE_URL  = 'https://zpiwlpqeozxrmolplgqx.supabase.co';
+const SUPABASE_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InpwaXdscHFlb3p4cm1vbHBsZ3F4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzYzMDk0MzIsImV4cCI6MjA5MTg4NTQzMn0.N0_fAeHXKhPT8cIIiDJk7Er5vWb6ggpJbCK9FEb6LaU';
+
+// ===== 状态 =====
+let allActivities = [];
+let filtered = [];
+let currentPage = 1;
+const PAGE_SIZE = 12;
+
+// 日期范围状态
+let dateFrom = null;
+let dateTo   = null;
+
+// ===== 工具函数 =====
+function formatDate(dateStr) {
+  if (!dateStr) return '';
+  const d = new Date(dateStr);
+  const m = d.getMonth() + 1;
+  const day = d.getDate();
+  const weekdays = ['日','一','二','三','四','五','六'];
+  return `${m}月${day}日（周${weekdays[d.getDay()]}）`;
+}
+
+function getTypeEmoji(type) {
+  const map = { '徒步':'🥾','骑行':'🚴','露营':'⛺','攀岩':'🧗','滑雪':'⛷','皮划艇':'🛶','其他':'🌿' };
+  return map[type] || '🌿';
+}
+
+function getPlatformLabel(platform) {
+  return platform === 'lvye' ? '绿野' : '公众号';
+}
+
+// ===== 快捷日期 =====
+function setQuickDate(range) {
+  document.querySelectorAll('.quick-btn').forEach(b => b.classList.remove('active'));
+  event.target.classList.add('active');
+
+  const today = new Date();
+  today.setHours(0,0,0,0);
+
+  if (range === 'today') {
+    dateFrom = dateTo = today;
+  } else if (range === 'week') {
+    // 本周六、日
+    const day = today.getDay();
+    const sat = new Date(today); sat.setDate(today.getDate() + (6 - day));
+    const sun = new Date(today); sun.setDate(today.getDate() + (7 - day));
+    dateFrom = sat; dateTo = sun;
+  } else if (range === 'next') {
+    const day = today.getDay();
+    const nextSat = new Date(today); nextSat.setDate(today.getDate() + (13 - day));
+    const nextSun = new Date(today); nextSun.setDate(today.getDate() + (14 - day));
+    dateFrom = nextSat; dateTo = nextSun;
+  } else if (range === 'month') {
+    dateFrom = today;
+    dateTo = new Date(today.getFullYear(), today.getMonth() + 1, 0);
+  }
+
+  applyFilters();
+}
+
+// ===== 筛选逻辑 =====
+function applyFilters() {
+  const type     = document.getElementById('filter-type').value;
+  const diff     = document.getElementById('filter-diff').value;
+  const platform = document.getElementById('filter-platform').value;
+
+  filtered = allActivities.filter(a => {
+    if (type     && a.activity_type     !== type)     return false;
+    if (diff     && a.difficulty        !== diff)     return false;
+    if (platform && a.source_platform   !== platform) return false;
+    if (dateFrom && a.activity_date) {
+      const d = new Date(a.activity_date);
+      if (d < dateFrom) return false;
+    }
+    if (dateTo && a.activity_date) {
+      const d = new Date(a.activity_date);
+      if (d > dateTo) return false;
+    }
+    return true;
+  });
+
+  // 按日期升序排列
+  filtered.sort((a, b) => {
+    if (!a.activity_date) return 1;
+    if (!b.activity_date) return -1;
+    return a.activity_date.localeCompare(b.activity_date);
+  });
+
+  currentPage = 1;
+  renderPage();
+}
+
+function resetFilters() {
+  document.getElementById('filter-type').value = '';
+  document.getElementById('filter-diff').value = '';
+  document.getElementById('filter-platform').value = '';
+  document.querySelectorAll('.quick-btn').forEach(b => b.classList.remove('active'));
+  document.querySelectorAll('.quick-btn')[1].classList.add('active'); // 默认本周末
+  setQuickDate('week');
+}
+
+// ===== 渲染卡片 =====
+function renderCard(a) {
+  const coverHtml = a.cover_image
+    ? `<div class="card-cover"><img src="${a.cover_image}" alt="" loading="lazy" onerror="this.parentElement.innerHTML='${getTypeEmoji(a.activity_type)}'"/></div>`
+    : `<div class="card-cover">${getTypeEmoji(a.activity_type)}</div>`;
+
+  const tags = [
+    a.activity_type ? `<span class="tag tag-type">${getTypeEmoji(a.activity_type)} ${a.activity_type}</span>` : '',
+    a.difficulty    ? `<span class="tag tag-diff">${a.difficulty}</span>` : '',
+    `<span class="tag tag-platform">${getPlatformLabel(a.source_platform)}</span>`,
+  ].filter(Boolean).join('');
+
+  const metaRows = [
+    a.activity_date  ? `<div class="meta-row"><span class="meta-icon">📅</span>${formatDate(a.activity_date)}</div>` : '',
+    a.meeting_time   ? `<div class="meta-row"><span class="meta-icon">⏰</span>${a.meeting_time}</div>` : '',
+    a.meeting_place  ? `<div class="meta-row"><span class="meta-icon">📍</span>${a.meeting_place}</div>` : '',
+    a.duration       ? `<div class="meta-row"><span class="meta-icon">🕐</span>${a.duration}</div>` : '',
+    a.price          ? `<div class="meta-row"><span class="meta-icon">💰</span><span class="meta-price">${a.price}</span></div>` : '',
+    a.quota          ? `<div class="meta-row"><span class="meta-icon">👥</span>名额 ${a.quota}</div>` : '',
+  ].filter(Boolean).join('');
+
+  return `
+    <div class="activity-card">
+      ${coverHtml}
+      <div class="card-body">
+        <div class="card-tags">${tags}</div>
+        <div class="card-title">${a.activity_name || '未知活动'}</div>
+        ${a.description ? `<div class="card-desc">${a.description}</div>` : ''}
+        <div class="card-meta">${metaRows}</div>
+      </div>
+      <div class="card-footer">
+        <span class="organizer">🏕 ${a.organizer_name || '未知组织'}</span>
+        <a class="source-link" href="${a.source_url}" target="_blank" rel="noopener" onclick="event.stopPropagation()">
+          查看原文 →
+        </a>
+      </div>
+    </div>`;
+}
+
+// ===== 渲染当前页 =====
+function renderPage() {
+  const container = document.getElementById('activity-container');
+  const total = filtered.length;
+  document.getElementById('result-count').textContent = total;
+
+  if (total === 0) {
+    container.innerHTML = `
+      <div class="empty-state">
+        <div class="emoji">🏕</div>
+        <p>暂无符合条件的活动，换个筛选条件试试？</p>
+      </div>`;
+    document.getElementById('pagination').innerHTML = '';
+    return;
+  }
+
+  const start = (currentPage - 1) * PAGE_SIZE;
+  const pageItems = filtered.slice(start, start + PAGE_SIZE);
+
+  container.innerHTML = `<div class="activity-grid">${pageItems.map(renderCard).join('')}</div>`;
+
+  // 分页
+  const totalPages = Math.ceil(total / PAGE_SIZE);
+  renderPagination(totalPages);
+
+  // 滚动到顶部
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+function renderPagination(totalPages) {
+  const el = document.getElementById('pagination');
+  if (totalPages <= 1) { el.innerHTML = ''; return; }
+
+  let html = `<button class="page-btn" onclick="goPage(${currentPage-1})" ${currentPage===1?'disabled':''}>‹ 上一页</button>`;
+  for (let i = 1; i <= totalPages; i++) {
+    if (i === 1 || i === totalPages || Math.abs(i - currentPage) <= 2) {
+      html += `<button class="page-btn ${i===currentPage?'active':''}" onclick="goPage(${i})">${i}</button>`;
+    } else if (Math.abs(i - currentPage) === 3) {
+      html += `<span style="padding:8px 4px;color:#999">…</span>`;
+    }
+  }
+  html += `<button class="page-btn" onclick="goPage(${currentPage+1})" ${currentPage===totalPages?'disabled':''}>下一页 ›</button>`;
+  el.innerHTML = html;
+}
+
+function goPage(p) {
+  currentPage = p;
+  renderPage();
+}
+
+// ===== 从 Supabase 加载数据 =====
+async function loadActivities() {
+  try {
+    // 只加载已审核的活动，按日期排序
+    const url = `${SUPABASE_URL}/rest/v1/activities?status=eq.approved&order=activity_date.asc&select=*`;
+    const res = await fetch(url, {
+      headers: {
+        'apikey': SUPABASE_ANON,
+        'Authorization': `Bearer ${SUPABASE_ANON}`,
+      }
+    });
+
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    allActivities = await res.json();
+
+    // 默认显示本周末
+    setQuickDate('week');
+
+  } catch (err) {
+    console.error('加载失败:', err);
+    document.getElementById('activity-container').innerHTML = `
+      <div class="empty-state">
+        <div class="emoji">😕</div>
+        <p>数据加载失败，请稍后刷新重试</p>
+        <p style="font-size:12px;margin-top:8px;color:#bbb">${err.message}</p>
+      </div>`;
+  }
+}
+
+// ===== 初始化 =====
+loadActivities();
+</script>
+</body>
+</html>
